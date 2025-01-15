@@ -92,7 +92,7 @@ class HandTracker:
                 use_world_landmarks=False,
                 pp_model = DETECTION_POSTPROCESSING_MODEL,
                 solo=True,
-                xyz=False,
+                xyz=True,
                 crop=False,
                 internal_fps=None,
                 resolution="full",
@@ -152,7 +152,7 @@ class HandTracker:
             self.input_type = "rgb" # OAK* internal color camera
             self.laconic = input_src == "rgb_laconic" # Camera frames are not sent to the host
             if resolution == "full":
-                self.resolution = (1920, 1080)
+                self.resolution = (1280, 800)
             elif resolution == "ultra":
                 self.resolution = (3840, 2160)
             else:
@@ -163,7 +163,7 @@ class HandTracker:
             if xyz:
                 # Check if the device supports stereo
                 cameras = self.device.getConnectedCameras()
-                if dai.CameraBoardSocket.LEFT in cameras and dai.CameraBoardSocket.RIGHT in cameras:
+                if dai.CameraBoardSocket.CAM_B in cameras and dai.CameraBoardSocket.CAM_C in cameras:
                     self.xyz = True
                 else:
                     print("Warning: depth unavailable on this device, 'xyz' argument is ignored")
@@ -220,7 +220,7 @@ class HandTracker:
         # Define data queues 
         if not self.laconic:
             self.q_video = self.device.getOutputQueue(name="cam_out", maxSize=1, blocking=False)
-        self.q_manager_out = self.device.getOutputQueue(name="manager_out", maxSize=1, blocking=False)
+        self.q_manager_out = self.device.getOutputQueue(name="manager_out", maxSize=10, blocking=False)
         # For showing outputs of ImageManip nodes (debugging)
         if self.trace & 4:
             self.q_pre_pd_manip_out = self.device.getOutputQueue(name="pre_pd_manip_out", maxSize=1, blocking=False)
@@ -246,11 +246,11 @@ class HandTracker:
         # ColorCamera
         print("Creating Color Camera...")
         cam = pipeline.createColorCamera()
-        if self.resolution[0] == 1920:
-            cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+        if self.resolution[0] == 1280:
+            cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_800_P)
         else:
             cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_4_K)
-        cam.setBoardSocket(dai.CameraBoardSocket.RGB)
+        cam.setBoardSocket(dai.CameraBoardSocket.CAM_B)
         cam.setInterleaved(False)
         cam.setIspScale(self.scale_nd[0], self.scale_nd[1])
         cam.setFps(self.internal_fps)
@@ -277,27 +277,37 @@ class HandTracker:
             print("Creating MonoCameras, Stereo and SpatialLocationCalculator nodes...")
             # For now, RGB needs fixed focus to properly align with depth.
             # The value used during calibration should be used here
-            calib_data = self.device.readCalibration()
-            calib_lens_pos = calib_data.getLensPosition(dai.CameraBoardSocket.RGB)
-            print(f"RGB calibration lens position: {calib_lens_pos}")
-            cam.initialControl.setManualFocus(calib_lens_pos)
+            # calib_data = self.device.readCalibration()
+            # calib_lens_pos = calib_data.getLensPosition(dai.CameraBoardSocket.CAM_B)
+            # print(f"RGB calibration lens position: {calib_lens_pos}")
+            # cam.initialControl.setManualFocus(calib_lens_pos)
 
-            mono_resolution = dai.MonoCameraProperties.SensorResolution.THE_400_P
-            left = pipeline.createMonoCamera()
-            left.setBoardSocket(dai.CameraBoardSocket.LEFT)
-            left.setResolution(mono_resolution)
-            left.setFps(self.internal_fps)
+            # mono_resolution = dai.MonoCameraProperties.SensorResolution.THE_400_P
+            # left = pipeline.createMonoCamera()
+            # left.setBoardSocket(dai.CameraBoardSocket.CAM_B)
+            # left.setResolution(mono_resolution)
+            # left.setFps(self.internal_fps)
+            left = cam
 
-            right = pipeline.createMonoCamera()
-            right.setBoardSocket(dai.CameraBoardSocket.RIGHT)
-            right.setResolution(mono_resolution)
+            right = pipeline.createColorCamera()
+            right.setBoardSocket(dai.CameraBoardSocket.CAM_C)
+            right.setResolution(dai.ColorCameraProperties.SensorResolution.THE_800_P)
+            right.setInterleaved(False)
+            right.setIspScale(self.scale_nd[0], self.scale_nd[1])
             right.setFps(self.internal_fps)
+
+            if self.crop:
+                cam.setVideoSize(self.frame_size, self.frame_size)
+                cam.setPreviewSize(self.frame_size, self.frame_size)
+            else: 
+                cam.setVideoSize(self.img_w, self.img_h)
+                cam.setPreviewSize(self.img_w, self.img_h)
 
             stereo = pipeline.createStereoDepth()
             stereo.setConfidenceThreshold(230)
             # LR-check is required for depth alignment
             stereo.setLeftRightCheck(True)
-            stereo.setDepthAlign(dai.CameraBoardSocket.RGB)
+            # stereo.setDepthAlign(dai.CameraBoardSocket.CAM_C)
             stereo.setSubpixel(False)  # subpixel True brings latency
             # MEDIAN_OFF necessary in depthai 2.7.2. 
             # Otherwise : [critical] Fatal error. Please report to developers. Log: 'StereoSipp' '533'
@@ -308,8 +318,8 @@ class HandTracker:
             spatial_location_calculator.inputDepth.setBlocking(False)
             spatial_location_calculator.inputDepth.setQueueSize(1)
 
-            left.out.link(stereo.left)
-            right.out.link(stereo.right)    
+            left.isp.link(stereo.left)
+            right.isp.link(stereo.right)    
 
             stereo.depth.link(spatial_location_calculator.inputDepth)
 

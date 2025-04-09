@@ -105,6 +105,9 @@ class HandTracker3DRenderer:
             if self.time % 20 == 0:
                 if hasattr(hand, 'joint_angles'):
                     hand.joint_angles = -np.degrees(hand.joint_angles)
+                     # 发送关节角度数据
+                    hand_type = "left" if hand.handedness < 0.5 else "right"
+                    joint_angles_sender.send_joint_angles(hand_type, hand.joint_angles) # 发送关节角度数据到目标服务器
 
                     # 将一维数组转换为(15,3)格式
                     angles_2d = hand.joint_angles.reshape((-1, 3)) 
@@ -206,12 +209,6 @@ while True:
     key = cv2.waitKey(1)
     # Draw hands on open3d canvas
     renderer3d.draw(hands)
-    
-    # 发送关节角度数据
-    for hand in hands:
-        if hasattr(hand, 'joint_angles'):
-            hand_type = "left" if hand.handedness < 0.5 else "right"
-            joint_angles_sender.send_joint_angles(hand_type, hand.joint_angles)
     
     if key == 27 or key == ord('q'):
         break

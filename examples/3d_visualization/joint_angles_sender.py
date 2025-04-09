@@ -4,6 +4,7 @@ import socket
 import json
 import threading
 import time
+import numpy as np
 
 class JointAnglesSender:
     def __init__(self, server_ip='172.30.83.97', server_port=12346):
@@ -37,14 +38,30 @@ class JointAnglesSender:
                 time.sleep(2)  # 等待2秒后重试
                 self.connect_to_server()
 
+    def convert_numpy_to_python(self, obj):
+        """将numpy类型转换为Python原生类型"""
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, np.generic):
+            return obj.item()
+        elif isinstance(obj, dict):
+            return {k: self.convert_numpy_to_python(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self.convert_numpy_to_python(item) for item in obj]
+        else:
+            return obj
+
     def send_joint_angles(self, hand_type, joint_angles):
         if not self.connected or not self.client_socket:
             return
 
         try:
+            # 转换numpy类型为Python原生类型
+            converted_angles = self.convert_numpy_to_python(joint_angles)
+            
             data = {
                 'hand': hand_type,
-                'joint_angles': joint_angles,
+                'joint_angles': converted_angles,
                 'timestamp': time.time()
             }
             json_data = json.dumps(data)

@@ -104,7 +104,7 @@ class HandTracker3DRenderer:
 
             if self.time % 20 == 0:
                 if hasattr(hand, 'joint_angles'):
-                    hand.joint_angles = np.degrees(hand.joint_angles)
+                    hand.joint_angles = -np.degrees(hand.joint_angles)
 
                     # 将一维数组转换为(15,3)格式
                     angles_2d = hand.joint_angles.reshape((-1, 3)) 
@@ -116,9 +116,7 @@ class HandTracker3DRenderer:
                     for i, (finger, joint_type) in enumerate(jac.JOINT_NAMES):
                         ax, ay, az = angles_2d[i]
                         print(f"{finger} {joint_type}:")
-                        print(f"  Flexion: {ax:6.1f}°")    # X轴：屈曲
-                        print(f"  Abduction: {ay:6.1f}°")  # Y轴：外展
-                        print(f"  Rotation: {az:6.1f}°")   # Z轴：轴向旋转
+                        print(f"  Rotation: {ax:6.1f}° Abduction: {ay:6.1f} Flexion: {az:6.1f}°")    # X轴：轴向旋转 Y轴：屈曲 Z轴：外展
                         print("-"*30)
             self.time += 1
 

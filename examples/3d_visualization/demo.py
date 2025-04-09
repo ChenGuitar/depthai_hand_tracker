@@ -8,6 +8,7 @@ import argparse
 import numpy as np
 import cv2
 from o3d_utils import Visu3D
+from joint_angles_sender import JointAnglesSender
 
 LINES_HAND = [[0,1],[1,2],[2,3],[3,4], 
             [0,5],[5,6],[6,7],[7,8],
@@ -298,6 +299,10 @@ parser_renderer3d.add_argument('-m', '--mode_3d', nargs='?',
                     help="Specify the 3D coordinates used. See README for description (default=%(default)s)")
 parser_renderer3d.add_argument('--no_smoothing', action="store_true", 
                     help="Disable smoothing filter (smoothing works only in solo mode)")   
+parser.add_argument('--server_ip', type=str, default='172.30.83.97',
+                    help="WSL2 服务器IP地址")
+parser.add_argument('--server_port', type=int, default=12346,
+                    help="WSL2 服务器端口")
 args = parser.parse_args()
 
 args.edge = True
@@ -323,6 +328,9 @@ tracker = HandTracker(
 renderer3d = HandTracker3DRenderer(tracker, mode_3d=args.mode_3d, smoothing=not args.no_smoothing)
 renderer2d = HandTrackerRenderer(tracker)
 
+# 初始化关节角度发送器
+joint_angles_sender = JointAnglesSender(server_ip=args.server_ip, server_port=args.server_port)
+
 pause = False
 hands = []
 
@@ -337,6 +345,13 @@ while True:
     key = cv2.waitKey(1)
     # Draw hands on open3d canvas
     renderer3d.draw(hands)
+    
+    # 发送关节角度数据
+    for hand in hands:
+        if hasattr(hand, 'joint_angles'):
+            hand_type = "left" if hand.handedness < 0.5 else "right"
+            joint_angles_sender.send_joint_angles(hand_type, hand.joint_angles)
+    
     if key == 27 or key == ord('q'):
         break
     elif key == 32: # space
@@ -344,5 +359,8 @@ while True:
     elif key == ord('s'):
         if renderer3d.filter:
             renderer3d.smoothing = not renderer3d.smoothing
+
+# 关闭发送器
+joint_angles_sender.close()
 renderer2d.exit()
 tracker.exit()

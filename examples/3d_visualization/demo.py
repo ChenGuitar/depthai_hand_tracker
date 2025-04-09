@@ -9,6 +9,7 @@ import numpy as np
 import cv2
 from o3d_utils import Visu3D
 from joint_angles_sender import JointAnglesSender
+import joint_angles_calculator as jac
 
 LINES_HAND = [[0,1],[1,2],[2,3],[3,4], 
             [0,5],[5,6],[6,7],[7,8],
@@ -71,157 +72,6 @@ class HandTracker3DRenderer:
                         ]
 
         self.nb_hands_in_previous_frame = 0
-
-    def calculate_joint_angles(self, landmarks):
-        """
-        计算手部各关节角度
-        landmarks: 手部关节的3D坐标 (世界坐标系)
-        返回: 包含各关节角度的字典
-        """
-        # 定义手指关节索引 (MediaPipe手部模型)
-        # 手腕: 0
-        # 拇指: 1-4 (1:掌指关节, 2:近节指关节, 3:远节指关节, 4:指尖)
-        # 食指: 5-8
-        # 中指: 9-12
-        # 无名指: 13-16
-        # 小指: 17-20
-        
-        # 计算向量
-        def calculate_vector(point1, point2):
-            return point2 - point1
-        
-        # 计算两个向量之间的角度(弧度)
-        def calculate_angle(v1, v2):
-            dot_product = np.dot(v1, v2)
-            norm_product = np.linalg.norm(v1) * np.linalg.norm(v2)
-            # 避免除零错误
-            if norm_product < 1e-6:
-                return 0
-            # 确保结果在-1到1之间，避免数值误差
-            cos_angle = np.clip(dot_product / norm_product, -1.0, 1.0)
-            angle_rad = np.arccos(cos_angle)
-            return angle_rad * 180 / np.pi  # 转换为角度
-        
-        angles = {}
-        
-        # 计算拇指角度
-        # 掌指关节(CMC)
-        v1 = calculate_vector(landmarks[0], landmarks[1])
-        v2 = calculate_vector(landmarks[1], landmarks[2]) # cmc is not that obvious, so use tip instead
-        angles['thumb_cmc'] = calculate_angle(v1, v2)
-        
-        # 近节指关节(MCP)
-        v1 = calculate_vector(landmarks[1], landmarks[2])
-        v2 = calculate_vector(landmarks[2], landmarks[3])
-        angles['thumb_mcp'] = (calculate_angle(v1, v2) - 0) * 1 # no obvious, multiply 2
-        
-        # 远节指关节(IP)
-        v1 = calculate_vector(landmarks[2], landmarks[3])
-        v2 = calculate_vector(landmarks[3], landmarks[4])
-        angles['thumb_ip'] = (calculate_angle(v1, v2) - 0) # ignore
-        
-        # 计算其他手指的角度
-        finger_names = ['index', 'middle', 'ring', 'little']
-        for i, name in enumerate(finger_names):
-            base_idx = 5 + i * 4
-            
-            # 掌指关节(MCP)
-            v1 = calculate_vector(landmarks[0], landmarks[base_idx])
-            v2 = calculate_vector(landmarks[base_idx], landmarks[base_idx + 1])
-            angles[f'{name}_mcp'] = (calculate_angle(v1, v2) - 0) * 1 # wrist and mcp not in verticle line
-            
-            # 近节指关节(PIP)
-            v1 = calculate_vector(landmarks[base_idx], landmarks[base_idx + 1])
-            v2 = calculate_vector(landmarks[base_idx + 1], landmarks[base_idx + 2])
-            angles[f'{name}_pip'] = calculate_angle(v1, v2) * 1
-            
-            # 远节指关节(DIP)
-            v1 = calculate_vector(landmarks[base_idx + 1], landmarks[base_idx + 2])
-            v2 = calculate_vector(landmarks[base_idx + 2], landmarks[base_idx + 3])
-            angles[f'{name}_dip'] = calculate_angle(v1, v2) # ignore
-
-        # 添加手腕姿态角度计算
-        # 定义手掌平面和方向
-        wrist = landmarks[0]  # 手腕点
-        index_mcp = landmarks[5]  # 食指掌指关节
-        pinky_mcp = landmarks[17]  # 小指掌指关节
-        middle_mcp = landmarks[9]  # 中指掌指关节
-        
-        # 计算手掌平面的法向量
-        palm_vector1 = index_mcp - wrist
-        palm_vector2 = pinky_mcp - wrist
-        palm_normal = np.cross(palm_vector1, palm_vector2)
-        palm_normal = palm_normal / np.linalg.norm(palm_normal)
-        
-        # 计算手指方向向量 (从手腕指向中指MCP)
-        finger_direction = middle_mcp - wrist
-        finger_direction = finger_direction / np.linalg.norm(finger_direction)
-        
-        # 计算手掌侧向向量 (垂直于手指方向和手掌法向量)
-        palm_side = np.cross(finger_direction, palm_normal)
-        palm_side = palm_side / np.linalg.norm(palm_side)
-        
-        # OAK世界坐标系为：
-        # x轴：向右
-        # y轴：向上
-        # z轴：向前
-        world_up = np.array([0, 1, 0])
-        world_forward = np.array([0, 0, 1])
-        
-        # 计算俯仰角 (pitch) - 手掌抬起/低下的角度
-        # 俯仰角是手指方向向量在y-z平面上的投影与y轴的夹角
-        finger_yz = np.array([0, finger_direction[1], finger_direction[2]])
-        if np.linalg.norm(finger_yz) > 1e-6:
-            finger_yz = finger_yz / np.linalg.norm(finger_yz)
-            pitch = np.arccos(np.clip(np.dot(finger_yz, world_up), -1.0, 1.0))
-            # 调整符号：当手指指向前方时，俯仰角为正
-            if finger_direction[2] < 0:
-                pitch = -pitch
-        else:
-            pitch = 0
-        
-        # 计算横滚角 (roll) - 手掌左右倾斜的角度
-        # 横滚角是手指方向量在x-y平面上的投影与y轴的夹角
-        finger_xy = np.array([finger_direction[0], finger_direction[1], 0])
-        if np.linalg.norm(finger_xy) > 1e-6:
-            finger_xy = finger_xy / np.linalg.norm(finger_xy)
-            roll = np.arccos(np.clip(np.dot(finger_xy, world_up), -1.0, 1.0))
-            # 调整符号：当手指指向前方时，俯仰角为正
-            if finger_direction[0] < 0:
-                roll = -roll
-        else:
-            roll = 0
-        '''
-        # 计算横滚角 (roll) - 手掌左右倾斜的角度
-        # 横滚角是手掌法向量在x-y平面上的投影与y轴的夹角
-        palm_normal_xy = np.array([palm_normal[0], palm_normal[1], 0])
-        if np.linalg.norm(palm_normal_xy) > 1e-6:
-            palm_normal_xy = palm_normal_xy / np.linalg.norm(palm_normal_xy)
-            roll = np.arccos(np.clip(np.dot(palm_normal_xy, world_up), -1.0, 1.0))
-            # 调整符号：当手掌法向量指向右侧时，横滚角为正
-            if palm_normal[0] > 0:
-                roll = -roll
-        else:
-            roll = 0
-        
-        # 计算偏航角 (yaw) - 手掌左右转动的角度
-        # 偏航角是手指方向向量在x-z平面上的投影与z轴的夹角
-        finger_xz = np.array([finger_direction[0], 0, finger_direction[2]])
-        if np.linalg.norm(finger_xz) > 1e-6:
-            finger_xz = finger_xz / np.linalg.norm(finger_xz)
-            yaw = np.arccos(np.clip(np.dot(finger_xz, world_forward), -1.0, 1.0))
-            # 调整符号：当手指指向右侧时，偏航角为正
-            if finger_direction[0] > 0:
-                yaw = -yaw
-        else:
-            yaw = 0
-        '''
-        
-        # 转换为角度
-        angles['wrist_pitch'] = pitch * 180 / np.pi
-        angles['wrist_roll'] = roll * 180 / np.pi
-
-        return angles
     
     def draw_hand(self, hand, i):
         if self.mode_3d == "image":
@@ -250,13 +100,26 @@ class HandTracker3DRenderer:
 
         if self.smoothing:
             points = self.filter[i].apply(points, object_scale=hand.rect_w_a)
-            hand.joint_angles = self.calculate_joint_angles(points)
+            hand.joint_angles = jac.compute_axis_angle_params(points)
+
             if self.time % 20 == 0:
                 if hasattr(hand, 'joint_angles'):
-                    print(f"========================================\n")
-                    for key in hand.joint_angles:
-                        print(f"==> {key}: {hand.joint_angles[key]}")
-                    print(f"\n========================================\n")
+                    hand.joint_angles = np.degrees(hand.joint_angles)
+
+                    # 将一维数组转换为(15,3)格式
+                    angles_2d = hand.joint_angles.reshape((-1, 3)) 
+
+                    print(f"\n===== {hand.label.upper()} HAND JOINTS =====")
+                    print(f"Wrist Position: {points[0]} (mm)")
+
+                    # 打印每个关节的详细角度
+                    for i, (finger, joint_type) in enumerate(jac.JOINT_NAMES):
+                        ax, ay, az = angles_2d[i]
+                        print(f"{finger} {joint_type}:")
+                        print(f"  Flexion: {ax:6.1f}°")    # X轴：屈曲
+                        print(f"  Abduction: {ay:6.1f}°")  # Y轴：外展
+                        print(f"  Rotation: {az:6.1f}°")   # Z轴：轴向旋转
+                        print("-"*30)
             self.time += 1
 
         for i,a_b in enumerate(LINES_HAND):

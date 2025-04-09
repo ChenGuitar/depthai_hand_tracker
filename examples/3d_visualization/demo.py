@@ -10,9 +10,10 @@ import cv2
 from o3d_utils import Visu3D
 import torch
 import smplx
+from joint_angles_sender import JointAnglesSender
 
 # 添加MANO模型路径
-MANO_MODEL_PATH = '../depthai_hand_tracker/models/MANO_LEFT.pkl'  # 替换为实际路径
+MANO_MODEL_PATH = 'D:/Users/11235/Desktop/OAKChina/depthai_ws/depthai_hand_tracker/models/'  # 替换为实际路径
 
 LINES_HAND = [[0,1],[1,2],[2,3],[3,4], 
             [0,5],[5,6],[6,7],[7,8],
@@ -152,7 +153,7 @@ class HandTracker3DRenderer:
             if self.time % 20 == 0:
                 if hasattr(hand, 'joint_angles'):
                     print(f"\n===== {hand.label.upper()} HAND JOINTS =====")
-                    print(f"Hand {i} Axis-Angle Parameters:\n{axis_angles}")
+                    print(f"Hand {i} Axis-Angle Parameters:\n{hand.joint_angles}")
             self.time += 1
 
         for i,a_b in enumerate(LINES_HAND):

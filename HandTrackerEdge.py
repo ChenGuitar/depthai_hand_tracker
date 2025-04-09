@@ -1,7 +1,7 @@
 import numpy as np
 from collections import namedtuple
 
-from numpy.lib.arraysetops import isin
+# from numpy.lib.arraysetops import isin
 import mediapipe_utils as mpu
 import depthai as dai
 import cv2

@@ -60,12 +60,14 @@ class JointAnglesSender:
             converted_angles = self.convert_numpy_to_python(joint_angles)
             
             data = {
-                'hand': hand_type,
+                # 'hand': hand_type,
                 'joint_angles': converted_angles,
-                'timestamp': time.time()
+                # 'timestamp': time.time()
             }
-            json_data = json.dumps(data)
-            self.client_socket.send(json_data.encode('utf-8'))
+            # 生成逗号分隔字符串
+            csv_data = ','.join(map(str, converted_angles))  # 将数值转换为字符串并用逗号连接
+            csv_data += '\n'  # 添加结尾换行符
+            self.client_socket.send(csv_data.encode('utf-8'))
         except Exception as e:
             print(f"发送关节角度数据失败: {e}")
             self.client_socket = None

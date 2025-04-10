@@ -101,25 +101,23 @@ class HandTracker3DRenderer:
         if self.smoothing:
             points = self.filter[i].apply(points, object_scale=hand.rect_w_a)
             hand_type = "left" if hand.handedness < 0.5 else "right"
-            hand.joint_angles = jac.compute_axis_angle_params(points)
-            hand.joint_angles = -np.degrees(hand.joint_angles)
-            joint_angles_sender.send_joint_angles(hand_type, hand.joint_angles) # 发送关节角度数据到目标服务器
+            # hand.joint_angles = jac.compute_axis_angle_params(points)
+            # hand.joint_angles = -np.degrees(hand.joint_angles)
+            joint_angles_sender.send_joint_angles(hand_type, points) # 发送关节角度数据到目标服务器
 
-            if self.time % 20 == 0:
-                if hasattr(hand, 'joint_angles'):
-                    
-                    # 将一维数组转换为(15,3)格式
-                    angles_2d = hand.joint_angles.reshape((-1, 3)) 
+            if self.time % 20 == 0:                    
+                # 将一维数组转换为(15,3)格式
+                angles_2d = points.reshape((-1, 3)) 
 
-                    print(f"\n===== {hand.label.upper()} HAND JOINTS =====")
-                    print(f"Wrist Position: {points[0]} (mm)")
+                print(f"\n===== {hand.label.upper()} HAND JOINTS =====")
+                print(f"Wrist Position: {points[0]} (mm)")
 
-                    # 打印每个关节的详细角度
-                    for i, (finger, joint_type) in enumerate(jac.JOINT_NAMES):
-                        ax, ay, az = angles_2d[i]
-                        print(f"{finger} {joint_type}:")
-                        print(f"  Rotation: {ax:6.1f}° Abduction: {ay:6.1f} Flexion: {az:6.1f}°")    # X轴：轴向旋转 Y轴：屈曲 Z轴：外展
-                        print("-"*30)
+                # 打印每个关节的详细角度
+                for i, (finger, joint_type) in enumerate(jac.JOINT_NAMES):
+                    ax, ay, az = angles_2d[i]
+                    print(f"{finger} {joint_type}:")
+                    print(f"  Rotation: {ax:6.1f}° Abduction: {ay:6.1f} Flexion: {az:6.1f}°")    # X轴：轴向旋转 Y轴：屈曲 Z轴：外展
+                    print("-"*30)
             self.time += 1
 
         for i,a_b in enumerate(LINES_HAND):

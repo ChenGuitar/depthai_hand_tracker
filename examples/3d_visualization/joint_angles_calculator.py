@@ -47,14 +47,14 @@ def compute_axis_angle_params(points):
     v1 = index_root_pos - wrist_pos
     v2 = pinky_root_pos - wrist_pos
     n = np.cross(v1, v2)
-    n_normalized = n / (np.linalg.norm(n) + 1e-8)
+    n_normalized = n / (np.linalg.norm(n))
     
     # Wrist coordinate system
-    x_axis_wrist = v1 / (np.linalg.norm(v1) + 1e-8)
+    x_axis_wrist = v1 / (np.linalg.norm(v1))
     y_axis_wrist = np.cross(x_axis_wrist, n_normalized)
-    y_axis_wrist /= np.linalg.norm(y_axis_wrist) + 1e-8
+    y_axis_wrist /= np.linalg.norm(y_axis_wrist)
     z_axis_wrist = np.cross(x_axis_wrist, y_axis_wrist)
-    z_axis_wrist /= np.linalg.norm(z_axis_wrist) + 1e-8
+    z_axis_wrist /= np.linalg.norm(z_axis_wrist)
     C_wrist = (x_axis_wrist, y_axis_wrist, z_axis_wrist)
     
     coordinate_systems = {}
@@ -80,7 +80,7 @@ def compute_axis_angle_params(points):
             
             # X-axis points to next joint
             x_axis = points[next_joint] - current_pos
-            x_axis_normalized = x_axis / (np.linalg.norm(x_axis) + 1e-8)
+            x_axis_normalized = x_axis / (np.linalg.norm(x_axis))
             
             # Root joints use palm normal, others use parent's coordinate system
             if i == 0:
@@ -91,13 +91,13 @@ def compute_axis_angle_params(points):
                 parent_joint = finger[i-1]
                 parent_pos = points[parent_joint]
                 parent_vec = current_pos - parent_pos
-                parent_vec_normalized = parent_vec / (np.linalg.norm(parent_vec) + 1e-8)
+                parent_vec_normalized = parent_vec / (np.linalg.norm(parent_vec))
                 y_axis = np.cross(x_axis_normalized, parent_vec_normalized)
             
             # Orthonormalize axes
-            y_axis_normalized = y_axis / (np.linalg.norm(y_axis) + 1e-8)
+            y_axis_normalized = y_axis / (np.linalg.norm(y_axis))
             z_axis = np.cross(x_axis_normalized, y_axis_normalized)
-            z_axis_normalized = z_axis / (np.linalg.norm(z_axis) + 1e-8)
+            z_axis_normalized = z_axis / (np.linalg.norm(z_axis))
             
             coordinate_systems[joint] = (x_axis_normalized, y_axis_normalized, z_axis_normalized)
     

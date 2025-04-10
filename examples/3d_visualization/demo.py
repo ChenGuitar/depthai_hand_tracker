@@ -8,12 +8,8 @@ import argparse
 import numpy as np
 import cv2
 from o3d_utils import Visu3D
-import torch
-import smplx
+import joint_angles_calculator as jac
 from joint_angles_sender import JointAnglesSender
-
-# 添加MANO模型路径
-MANO_MODEL_PATH = 'D:/Users/11235/Desktop/OAKChina/depthai_ws/depthai_hand_tracker/models/'  # 替换为实际路径
 
 LINES_HAND = [[0,1],[1,2],[2,3],[3,4], 
             [0,5],[5,6],[6,7],[7,8],
@@ -74,47 +70,8 @@ class HandTracker3DRenderer:
                         LandmarksSmoothingFilter(min_cutoff=1, beta=20, derivate_cutoff=10, disable_value_scaling=True),
                         LandmarksSmoothingFilter(min_cutoff=1, beta=20, derivate_cutoff=10, disable_value_scaling=True)
                         ]
-        # 加载MANO模型（左右手）
-        self.mano_models = {
-            'left': smplx.create(MANO_MODEL_PATH, model_type='mano', use_pca=False, is_rhand=False),
-            'right': smplx.create(MANO_MODEL_PATH, model_type='mano', use_pca=False, is_rhand=True)
-        }
-
-        self.mediapipe_indices = [1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15, 17, 18, 19]
-        self.mano_joint_indices = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]    
 
         self.nb_hands_in_previous_frame = 0
-
-    def process_hand_with_mano(self, hand_type, world_landmarks):
-        # 获取旋转后的世界坐标系关键点
-        wrist_pos = world_landmarks[0]
-        target_positions = world_landmarks[self.mediapipe_indices]
-
-        # 确定左右手
-        mano_model = self.mano_models[hand_type]
-
-        # 转换到Tensor
-        transl = torch.tensor(wrist_pos, dtype=torch.float32).unsqueeze(0)
-        target_positions_tensor = torch.tensor(target_positions, dtype=torch.float32).unsqueeze(0)
-
-        # 初始化姿态参数（排除手腕，优化后45维）
-        pose_params = torch.zeros(1, 45, requires_grad=True)
-        optimizer = torch.optim.Adam([pose_params], lr=0.1)
-
-        # 优化循环
-        for _ in range(100):
-            optimizer.zero_grad()
-            # 组合姿态参数（手腕为0，后面是优化参数）
-            full_pose = torch.cat([torch.zeros(1, 3), pose_params], dim=1)
-            output = mano_model(pose=full_pose, transl=transl, betas=torch.zeros(1, 10))
-            joints = output.joints[:, self.mano_joint_indices, :]
-            loss = torch.mean((joints - target_positions_tensor) ** 2)
-            loss.backward()
-            optimizer.step()
-
-        # 提取轴角参数（15*3）
-        axis_angles = pose_params.detach().numpy().reshape(15, 3)
-        return axis_angles
     
     def draw_hand(self, hand, i):
         if self.mode_3d == "image":
@@ -144,16 +101,25 @@ class HandTracker3DRenderer:
         if self.smoothing:
             points = self.filter[i].apply(points, object_scale=hand.rect_w_a)
             hand_type = "left" if hand.handedness < 0.5 else "right"
-            hand.joint_angles = self.process_hand_with_mano(hand_type, points)
+            hand.joint_angles = jac.compute_axis_angle_params(points)
             hand.joint_angles = -np.degrees(hand.joint_angles)
-             # 发送关节角度数据
-            hand_type = "left" if hand.handedness < 0.5 else "right"
             joint_angles_sender.send_joint_angles(hand_type, hand.joint_angles) # 发送关节角度数据到目标服务器
 
             if self.time % 20 == 0:
                 if hasattr(hand, 'joint_angles'):
+                    
+                    # 将一维数组转换为(15,3)格式
+                    angles_2d = hand.joint_angles.reshape((-1, 3)) 
+
                     print(f"\n===== {hand.label.upper()} HAND JOINTS =====")
-                    print(f"Hand {i} Axis-Angle Parameters:\n{hand.joint_angles}")
+                    print(f"Wrist Position: {points[0]} (mm)")
+
+                    # 打印每个关节的详细角度
+                    for i, (finger, joint_type) in enumerate(jac.JOINT_NAMES):
+                        ax, ay, az = angles_2d[i]
+                        print(f"{finger} {joint_type}:")
+                        print(f"  Rotation: {ax:6.1f}° Abduction: {ay:6.1f} Flexion: {az:6.1f}°")    # X轴：轴向旋转 Y轴：屈曲 Z轴：外展
+                        print("-"*30)
             self.time += 1
 
         for i,a_b in enumerate(LINES_HAND):
